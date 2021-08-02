@@ -40,23 +40,6 @@ exports.digest = function digest (options) {
     secret = encoding === 'base32' ? new Buffer(base32.decode(secret)) : new Buffer(secret, encoding);
   }
 
-  var secret_buffer_size;
-  if (algorithm === 'sha1') {
-    secret_buffer_size = 20; // 20 bytes
-  } else if (algorithm === 'sha256') {
-    secret_buffer_size = 32; // 32 bytes
-  } else if (algorithm === 'sha512') {
-    secret_buffer_size = 64; // 64 bytes
-  } else {
-    console.warn('Speakeasy - The algorithm provided (`' + algorithm + '`) is not officially supported, results may be different than expected.');
-  }
-
-  // The secret for sha1, sha256 and sha512 needs to be a fixed number of bytes for the one-time-password to be calculated correctly
-  // Pad the buffer to the correct size be repeating the secret to the desired length
-  if (secret_buffer_size && secret.length !== secret_buffer_size) {
-    secret = new Buffer(Array(Math.ceil(secret_buffer_size / secret.length) + 1).join(secret.toString('hex')), 'hex').slice(0, secret_buffer_size);
-  }
-
   // create an buffer from the counter
   var buf = new Buffer(8);
   var tmp = counter;
@@ -102,22 +85,6 @@ exports.digest = function digest (options) {
  */
 
 exports.hotp = function hotpGenerate (options) {
-
-  // verify secret and counter exists
-  var secret = options.secret;
-  var key = options.key;
-  var counter = options.counter;
-
-  if (key === null || typeof key === 'undefined') {
-    if (secret === null || typeof secret === 'undefined') {
-      throw new Error('Speakeasy - hotp - Missing secret');
-    }
-  }
-
-  if (counter === null || typeof counter === 'undefined') {
-    throw new Error('Speakeasy - hotp - Missing counter');
-  }
-
   // unpack digits
   // backward compatibility: `length` is also accepted here, but deprecated
   var digits = (options.digits != null ? options.digits : options.length) || 6;
@@ -187,12 +154,6 @@ exports.hotp.verifyDelta = function hotpVerifyDelta (options) {
 
   // shadow options
   options = Object.create(options);
-
-  // verify secret and token exist
-  var secret = options.secret;
-  var token = options.token;
-  if (secret === null || typeof secret === 'undefined') throw new Error('Speakeasy - hotp.verifyDelta - Missing secret');
-  if (token === null || typeof token === 'undefined') throw new Error('Speakeasy - hotp.verifyDelta - Missing token');
 
   // unpack options
   var token = String(options.token);
@@ -324,15 +285,6 @@ exports.totp = function totpGenerate (options) {
   // shadow options
   options = Object.create(options);
 
-  // verify secret exists if key is not specified
-  var key = options.key;
-  var secret = options.secret;
-  if (key === null || typeof key === 'undefined') {
-    if (secret === null || typeof secret === 'undefined') {
-      throw new Error('Speakeasy - totp - Missing secret');
-    }
-  }
-
   // calculate default counter value
   if (options.counter == null) options.counter = exports._counter(options);
 
@@ -392,11 +344,6 @@ exports.time = exports.totp;
 exports.totp.verifyDelta = function totpVerifyDelta (options) {
   // shadow options
   options = Object.create(options);
-  // verify secret and token exist
-  var secret = options.secret;
-  var token = options.token;
-  if (secret === null || typeof secret === 'undefined') throw new Error('Speakeasy - totp.verifyDelta - Missing secret');
-  if (token === null || typeof token === 'undefined') throw new Error('Speakeasy - totp.verifyDelta - Missing token');
 
   // unpack options
   var window = parseInt(options.window, 10) || 0;
@@ -488,8 +435,6 @@ exports.totp.verify = function totpVerify (options) {
  * @param {Boolean} [options.google_auth_qr=false] (DEPRECATED. Do not use to
  *   prevent leaking of secret to a third party. Use your own QR code
  *   implementation.) Output a Google Authenticator otpauth:// QR code URL.
- * @param {String} [options.issuer=''] The provider or service with which the
- *   secret key is associated.
  * @return {Object}
  * @return {GeneratedSecret} The generated secret key.
  */
@@ -497,12 +442,11 @@ exports.generateSecret = function generateSecret (options) {
   // options
   if (!options) options = {};
   var length = options.length || 32;
-  var name = options.name || 'SecretKey';
+  var name = encodeURIComponent(options.name || 'SecretKey');
   var qr_codes = options.qr_codes || false;
   var google_auth_qr = options.google_auth_qr || false;
   var otpauth_url = options.otpauth_url != null ? options.otpauth_url : true;
   var symbols = true;
-  var issuer = options.issuer;
 
   // turn off symbols only when explicity told to
   if (options.symbols !== undefined && options.symbols === false) {
@@ -530,8 +474,7 @@ exports.generateSecret = function generateSecret (options) {
   if (otpauth_url) {
     SecretKey.otpauth_url = exports.otpauthURL({
       secret: SecretKey.ascii,
-      label: name,
-      issuer: issuer
+      label: name
     });
   }
 
@@ -623,9 +566,9 @@ exports.otpauthURL = function otpauthURL (options) {
   var issuer = options.issuer;
   var type = (options.type || 'totp').toLowerCase();
   var counter = options.counter;
-  var algorithm = (options.algorithm || 'sha1').toLowerCase();
-  var digits = options.digits || 6;
-  var period = options.period || 30;
+  var algorithm = options.algorithm;
+  var digits = options.digits;
+  var period = options.period;
   var encoding = options.encoding || 'ascii';
 
   // validate type
@@ -653,9 +596,6 @@ exports.otpauthURL = function otpauthURL (options) {
   // build query while validating
   var query = {secret: secret};
   if (issuer) query.issuer = issuer;
-  if (type === 'hotp') {
-    query.counter = counter;
-  }
 
   // validate algorithm
   if (algorithm != null) {
@@ -700,7 +640,7 @@ exports.otpauthURL = function otpauthURL (options) {
     protocol: 'otpauth',
     slashes: true,
     hostname: type,
-    pathname: encodeURIComponent(label),
+    pathname: label,
     query: query
   });
 };
